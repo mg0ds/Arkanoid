@@ -1,4 +1,6 @@
 import pygame
+import random
+import time
 
 # initiate pygame
 pygame.init()
@@ -28,10 +30,17 @@ PADDLE_START_POZ_X = WIDTH//2 - PADDLE_WIDTH//2
 PADDLE_START_POZ_Y = HEIGHT - PADDLE_HEIGHT - int(HEIGHT * 0.04)
 BALL_RADIUS = 7
 
-game1 = ["_G_____RR_____B_"]
-game2 = ["GGRR___BP___YYGG", "RR____________RR", "BRGYPBRGYPBRGYPB"]
-game3 = ["BRGYPBRGYPBRGYPB", "RRRBBBGGGGYYYPPP"]
-games = [game1, game2, game3]
+# game levels, 16 signs per level
+# R, G, B, Y, P are colors, _ is empty space
+# Y has 2hp, P has 3hp, other blocks have 1hp
+game1 = ["BRBRBRBRBRBRBRBR"]
+game2 = ["_B_P__RYYR__P_B_"]
+game3 = ["GGRR___BP___YYGG", "RR____________RR", "BRGYPBRGYPBRGYPB"]
+game4 = ["_G_____RR_____B_", "YPYPYPYPYPYPYPYP"]
+game5 = ["BRGYPBRGYPBRGYPB", "RRRBBBGGGGYYYPPP"]
+game6 = ["PPPPPPPPPPPPPPPP", "RRRRRRRRRRRRRRRR", "GGGGGGGGGGGGGGGG", "BBBBBBBBBBBBBBBB", "YYYYYYYYYYYYYYYY"]
+games = [game1, game2, game3, game4, game5, game6]
+
 
 class Paddle:
     COLOR = WHITE
@@ -40,8 +49,8 @@ class Paddle:
     def __init__(self, x, y, width, height):
         self.x = x
         self.y = y
-        self.width = width
-        self.height = height
+        self.width = self.starting_width = width
+        self.height = self.starting_height = height
 
     def draw(self, window):
         pygame.draw.rect(window, self.COLOR, (self.x, self.y, self.width, self.height))
@@ -53,22 +62,25 @@ class Paddle:
             self.x += self.VEL
 
     def reset(self):
+        self.width = self.starting_width
+        self.height = self.starting_height
         self.x = PADDLE_START_POZ_X
         self.y = PADDLE_START_POZ_Y
 
-class Ball:
-    MAX_VEL = 5
-    COLOR = WHITE
 
-    def __init__(self, x, y, radius):
+class Ball:
+    def __init__(self, x, y, radius, power_up=False, color=WHITE, max_vel=5):
         self.x = x
         self.y = y
         self.radius = radius
+        self.power_up = power_up
+        self.color = color
+        self.max_vel = max_vel
         self.x_vel = 0
-        self.y_vel = self.MAX_VEL
+        self.y_vel = self.max_vel
 
     def draw(self, window):
-        pygame.draw.circle(window, self.COLOR, (self.x, self.y), self.radius)
+        pygame.draw.circle(window, self.color, (self.x, self.y), self.radius)
 
     def move(self):
         self.x += self.x_vel
@@ -78,7 +90,8 @@ class Ball:
         self.x = WIDTH // 2
         self.y = HEIGHT // 2
         self.x_vel = 0
-        self.y_vel = self.MAX_VEL
+        self.y_vel = self.max_vel
+
 
 class Block:
     B_WIDTH = 50
@@ -91,13 +104,20 @@ class Block:
         self.reward = reward
         self.hp = hp
         self.active = active
+        if self.color == YELLOW:
+            self.hp = 2
+            self.reward = 25
+        if self.color == PINK:
+            self.hp = 3
+            self.reward = 40
 
     def draw(self, window):
         pygame.draw.rect(window, self.color, (self.x, self.y, self.B_WIDTH, self.B_HEIGHT))
 
+
 def generate_board(game):
     block_x_poz = 0
-    block_y_poz = int(HEIGHT * 0.05)
+    block_y_poz = int(HEIGHT * 0.07)
     blocks = []
     colordict = {"B": BLUE, "R": RED, "G": GREEN, "Y": YELLOW, "P": PINK}
     for row in game:
@@ -111,55 +131,81 @@ def generate_board(game):
         block_y_poz += 20
     return blocks
 
+
 def handle_paddle_movement(keys, paddle_1):
     if keys[pygame.K_LEFT] and paddle_1.x - paddle_1.VEL >= 0:
         paddle_1.move(left=True)
     elif keys[pygame.K_RIGHT] and paddle_1.x + paddle_1.width + paddle_1.VEL <= WIDTH:
         paddle_1.move(left=False)
 
-def handle_collision(ball, paddle, blocks):
-    # collision with walls
-    if ball.y - ball.radius <= 0:
-        ball.y_vel *= -1
-    elif ball.x - ball.radius <= 0:
-        ball.x_vel *= -1
-    elif ball.x + ball.radius >= WIDTH:
-        ball.x_vel *= -1
 
-    # collision with paddle
-    if ball.y_vel > 0:
+def handle_collision(ball, paddle, blocks):
+
+    if ball.power_up == False:  # game ball check
+        # collision with walls
+        if ball.y - ball.radius <= 0:
+            ball.y_vel *= -1
+        elif ball.x - ball.radius <= 0:
+            ball.x_vel *= -1
+        elif ball.x + ball.radius >= WIDTH:
+            ball.x_vel *= -1
+
+        # collision with paddle
+        if ball.y_vel > 0:
+            if ball.x >= paddle.x and ball.x <= paddle.x + paddle.width:
+                if ball.y + ball.radius >= paddle.y:
+                    ball.y_vel *= -1
+
+                    # ball bounce angle change
+                    middle_x = paddle.x + paddle.width / 2
+                    difference_in_x = middle_x - ball.x
+                    reduction_factor = (paddle.width / 2) / ball.max_vel
+                    x_vel = difference_in_x / reduction_factor
+                    ball.x_vel = x_vel * -1
+
+
+        # collision with blocks
+        for block in blocks:
+            if ball.x + ball.radius >= block.x and ball.x - ball.radius <= block.x + block.B_WIDTH \
+                    and ball.y + ball.radius >= block.y and ball.y - ball.radius <= block.y + block.B_HEIGHT:
+                if ball.y + ball.radius >= block.y - 6 and ball.y + ball.radius <= block.y + 6:
+                    ball.y_vel *= -1
+                if ball.y - ball.radius <= block.y + block.B_HEIGHT + 6 \
+                        and ball.y - ball.radius >= block.y + block.B_HEIGHT - 6:
+                    ball.y_vel *= -1
+                if ball.x + ball.radius >= block.x - 6 and ball.x + ball.radius <= block.x + 6:
+                    ball.x_vel *= -1
+                if ball.x - ball.radius <= block.x + block.B_WIDTH + 6 \
+                        and ball.x - ball.radius >= block.x + block.B_WIDTH - 6:
+                    ball.x_vel *= -1
+                return 3, block
+    else:  # power up collision check
         if ball.x >= paddle.x and ball.x <= paddle.x + paddle.width:
             if ball.y + ball.radius >= paddle.y:
-                ball.y_vel *= -1
+                # power up catch
+                return 1, ball
+            else:
+                # power up still falling
+                return 2, ball
 
-                # ball bounce angle change
-                middle_x = paddle.x + paddle.width / 2
-                difference_in_x = middle_x - ball.x
-                reduction_factor = (paddle.width / 2) / ball.MAX_VEL
-                x_vel = difference_in_x / reduction_factor
-                ball.x_vel = x_vel * -1
 
-    # collision with blocks
-    for block in blocks:
-        if ball.x + ball.radius >= block.x and ball.x - ball.radius <= block.x + block.B_WIDTH \
-                and ball.y + ball.radius >= block.y and ball.y - ball.radius <= block.y + block.B_HEIGHT:
-            if ball.y + ball.radius >= block.y - 6 and ball.y + ball.radius <= block.y + 6:
-                ball.y_vel *= -1
-            if ball.y - ball.radius <= block.y + block.B_HEIGHT + 6 \
-                    and ball.y - ball.radius >= block.y + block.B_HEIGHT - 6:
-                ball.y_vel *= -1
-            if ball.x + ball.radius >= block.x - 6 and ball.x + ball.radius <= block.x + 6:
-                ball.x_vel *= -1
-            if ball.x - ball.radius <= block.x + block.B_WIDTH + 6 \
-                    and ball.x - ball.radius >= block.x + block.B_WIDTH - 6:
-                ball.x_vel *= -1
-            return block
+def power_up_generate():
+    # how often powerup will fall
+    a = random.randint(0, 1)
+    return a
+
+
+def enlarge_paddle(paddle):
+    paddle.width = 200
+    paddle.x -= 50
+
 
 def remove_block(block, block_to_remove):
     # remove block after collision
     block.remove(block_to_remove)
 
-def draw(window, paddles, ball, blocks, score):
+
+def draw(window, paddles, balls, blocks, score):
     window.fill(BLACK)
 
     score_text = score_font.render(f"{score}", 1, WHITE)
@@ -171,8 +217,11 @@ def draw(window, paddles, ball, blocks, score):
     for block in blocks:
         block.draw(window)
 
-    ball.draw(window)
+    for ball in balls:
+        ball.draw(window)
+
     pygame.display.update()
+
 
 def main():
     run = True
@@ -183,26 +232,77 @@ def main():
     blocks = generate_board(games[game])
     paddle_1 = Paddle(PADDLE_START_POZ_X, PADDLE_START_POZ_Y, PADDLE_WIDTH, PADDLE_HEIGHT)
     ball = Ball(WIDTH//2, HEIGHT//2, BALL_RADIUS)
+    balls = [ball]
+    paddles = [paddle_1]
+    #enlarge_paddle(paddle_1)
+    power_up = False
+    enlarge_paddle_check = False
 
     while run:
         clock.tick(FPS)
-        draw(WINDOW, [paddle_1], ball, blocks, score)
+        draw(WINDOW, paddles, balls, blocks, score)
 
         for event in pygame.event.get():
             if event.type == pygame.QUIT:
                 run = False
                 break
 
+        ball_no = 1
         keys = pygame.key.get_pressed()
         handle_paddle_movement(keys, paddle_1)
-        ball.move()
-        block_to_remove = handle_collision(ball, paddle_1, blocks)
-        # remove block after collision
-        if block_to_remove:
-            score += block_to_remove.reward
-            remove_block(blocks, block_to_remove)
+        for ball in balls:
+            ball.move()
+            collision_check = handle_collision(ball, paddle_1, blocks)
 
-        # all blocks destroyed
+            if collision_check:
+                if ball.power_up == False:  # normal ball, collision with ball and block:
+                    collision_check[1].hp -= 1
+                    if collision_check[1].hp == 0:  # remove block if its hp falls to 0:
+                        # check if power_up will spawn and what type:
+                        pu_number = power_up_generate()
+                        print(pu_number)
+                        if pu_number == 0:
+                            # create power up ball:
+
+                            # add some code for different power ups
+                            balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, PINK, 3))
+                            print(balls)
+                        score += collision_check[1].reward
+                        remove_block(blocks, collision_check[1])
+                else:  # ball is a power up ball
+                    if collision_check[0] == 1:  # power up caught, remove power up ball, modify game by power up
+                        print("zlapane")
+                        balls.remove(collision_check[1])
+                        if enlarge_paddle_check is False:  # only one enlarge paddle power up at the time
+                            enlarge_paddle(paddle_1)
+                            enlarge_paddle_check = True
+                            enp_start_time = time.time()
+                    power_up = False
+
+
+            if ball.power_up is False and ball.y > HEIGHT:
+                # player didn't catch game ball
+                ball.reset()
+                balls = [balls[0]]
+                paddle_1.reset()
+                score = 0
+                loss_text = wl_font.render("You lose!", 1, WHITE)
+                WINDOW.blit(loss_text, ((WIDTH // 2) - (loss_text.get_width() // 2), HEIGHT // 2))
+                pygame.display.update()
+                pygame.time.delay(2000)
+            if ball.power_up and ball.y > HEIGHT:
+                # player didn't catch power up ball
+                balls.remove(ball)
+
+            if enlarge_paddle_check:  # enlarge paddle timer
+                if time.time() - enp_start_time > 10:
+                    enlarge_paddle_check = False
+                    paddle_1.width = 100
+                    paddle_1.x += 50
+
+
+
+        # all blocks are destroyed
         if blocks == []:
             ball.reset()
             paddle_1.reset()
@@ -224,17 +324,10 @@ def main():
                 blocks = generate_board(games[game])
                 pygame.time.delay(2000)
 
-        # player didn't catch ball
-        if ball.y > HEIGHT:
-            ball.reset()
-            paddle_1.reset()
-            score = 0
-            loss_text = wl_font.render("You lose!", 1, WHITE)
-            WINDOW.blit(loss_text, ((WIDTH // 2) - (loss_text.get_width() // 2), HEIGHT // 2))
-            pygame.display.update()
-            pygame.time.delay(2000)
+
 
     pygame.quit()
+
 
 if __name__ == "__main__":
     main()
