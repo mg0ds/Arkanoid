@@ -75,7 +75,7 @@ class Ball:
         self.radius = radius
         self.power_up = power_up
         self.color = color
-        self.max_vel = max_vel
+        self.max_vel = self.start_max_vel = max_vel
         self.x_vel = 0
         self.y_vel = self.max_vel
 
@@ -90,7 +90,7 @@ class Ball:
         self.x = WIDTH // 2
         self.y = HEIGHT // 2
         self.x_vel = 0
-        self.y_vel = self.max_vel
+        self.y_vel = self.start_max_vel
 
 
 class Block:
@@ -191,13 +191,34 @@ def handle_collision(ball, paddle, blocks):
 
 def power_up_generate():
     # how often powerup will fall
-    a = random.randint(0, 1)
+    a = random.randint(0, 2)
     return a
 
 
 def enlarge_paddle(paddle):
     paddle.width = 200
     paddle.x -= 50
+
+def sticky_ball(ball, paddle):
+    last_x_vel = ball.x_vel
+    last_y_vel = ball.y_vel
+    ball.x_vel = 0
+    ball.y_vel = 0
+    
+    if ball.y_vel > 0:
+        if ball.x >= paddle.x and ball.x <= paddle.x + paddle.width:
+            if ball.y + ball.radius >= paddle.y:
+                ball.y_vel *= -1
+
+                # ball bounce angle change
+                middle_x = paddle.x + paddle.width / 2
+                difference_in_x = middle_x - ball.x
+                reduction_factor = (paddle.width / 2) / ball.max_vel
+                x_vel = difference_in_x / reduction_factor
+                ball.x_vel = x_vel * -1
+
+# ball sticks to paddle
+# shooting bullets from paddle
 
 
 def remove_block(block, block_to_remove):
@@ -234,7 +255,6 @@ def main():
     ball = Ball(WIDTH//2, HEIGHT//2, BALL_RADIUS)
     balls = [ball]
     paddles = [paddle_1]
-    #enlarge_paddle(paddle_1)
     power_up = False
     enlarge_paddle_check = False
 
@@ -266,30 +286,59 @@ def main():
 
                             # add some code for different power ups
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, PINK, 3))
-                            print(balls)
+                        elif pu_number == 1:
+                            balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, BLUE, 3))
+                        elif pu_number == 2:
+                            balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, YELLOW, 3))
+
                         score += collision_check[1].reward
                         remove_block(blocks, collision_check[1])
                 else:  # ball is a power up ball
                     if collision_check[0] == 1:  # power up caught, remove power up ball, modify game by power up
-                        print("zlapane")
-                        balls.remove(collision_check[1])
-                        if enlarge_paddle_check is False:  # only one enlarge paddle power up at the time
+                        print(f"zlapane {collision_check[1].color}")
+                        balls.remove(collision_check[1])  # remove power up ball
+
+                        # some code for different power ups
+
+                        if enlarge_paddle_check is False and collision_check[1].color is PINK:
+                            # enlarge paddle power up activate
+                            print("enlarge")
                             enlarge_paddle(paddle_1)
                             enlarge_paddle_check = True
                             enp_start_time = time.time()
+                        elif collision_check[1].color is BLUE:
+                            print("3 balls")
+                            # three balls power up
+                            for ball in balls[::-1]:
+                                if ball.power_up == False:
+                                    balls.append(Ball(ball.x, ball.y, BALL_RADIUS))
+                                    balls[-1].x_vel += 2
+                                    balls[-1].y_vel *= -0.8
+                                    balls.append(Ball(ball.x, ball.y, BALL_RADIUS))
+                                    balls[-1].x_vel -= 2
+                                    balls[-1].y_vel *= -1.2
+                        elif collision_check[1].color is YELLOW:
+                            print("ball sticks to paddle")
+                            sticky_ball_check = True
+                            sticky_ball_start_time = time.time()
+                            
+                        print(f"len(balls) = {len(balls)}")
                     power_up = False
-
 
             if ball.power_up is False and ball.y > HEIGHT:
                 # player didn't catch game ball
-                ball.reset()
-                balls = [balls[0]]
-                paddle_1.reset()
-                score = 0
-                loss_text = wl_font.render("You lose!", 1, WHITE)
-                WINDOW.blit(loss_text, ((WIDTH // 2) - (loss_text.get_width() // 2), HEIGHT // 2))
-                pygame.display.update()
-                pygame.time.delay(2000)
+                ball_height_check = ["o" for ball in balls if ball.power_up is False]
+                if len(ball_height_check) <= 1:
+                    ball.reset()
+                    balls = [balls[0]]
+                    paddle_1.reset()
+                    score = 0
+                    loss_text = wl_font.render("You lose!", 1, WHITE)
+                    WINDOW.blit(loss_text, ((WIDTH // 2) - (loss_text.get_width() // 2), HEIGHT // 2))
+                    pygame.display.update()
+                    pygame.time.delay(2000)
+                else:
+                    balls.remove(ball)
             if ball.power_up and ball.y > HEIGHT:
                 # player didn't catch power up ball
                 balls.remove(ball)
@@ -299,12 +348,18 @@ def main():
                     enlarge_paddle_check = False
                     paddle_1.width = 100
                     paddle_1.x += 50
+                    
+            if sticky_ball_check:
+                if time.time() - sticky_ball_start_time > 15:
+                    sticky_ball_check = False
+                    
 
 
 
         # all blocks are destroyed
         if blocks == []:
-            ball.reset()
+            balls = [balls[0]]
+            balls[0].reset()
             paddle_1.reset()
             score += 100
 
@@ -323,7 +378,6 @@ def main():
                 # load next board
                 blocks = generate_board(games[game])
                 pygame.time.delay(2000)
-
 
 
     pygame.quit()
