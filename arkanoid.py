@@ -69,15 +69,19 @@ class Paddle:
 
 
 class Ball:
-    def __init__(self, x, y, radius, power_up=False, color=WHITE, max_vel=5):
+    def __init__(self, x, y, radius, power_up=False, color=WHITE, max_vel=5, sticky=False, bullet=False):
         self.x = x
         self.y = y
         self.radius = radius
         self.power_up = power_up
         self.color = color
         self.max_vel = self.start_max_vel = max_vel
+        self.sticky = sticky
+        self.bullet = bullet
         self.x_vel = 0
         self.y_vel = self.max_vel
+        if bullet:
+            self.y_vel = -self.max_vel
 
     def draw(self, window):
         pygame.draw.circle(window, self.color, (self.x, self.y), self.radius)
@@ -91,6 +95,7 @@ class Ball:
         self.y = HEIGHT // 2
         self.x_vel = 0
         self.y_vel = self.start_max_vel
+        self.sticky = False
 
 
 class Block:
@@ -139,6 +144,19 @@ def handle_paddle_movement(keys, paddle_1):
         paddle_1.move(left=False)
 
 
+def sticky_ball_release(keys, ball, last_x_vel, last_y_vel, time_up=False):
+    if keys[pygame.K_SPACE]:
+        print("space!")
+        print(last_x_vel)
+        print(last_y_vel)
+        ball.x_vel = last_x_vel
+        ball.y_vel = last_y_vel
+        return 1
+    elif time_up:
+        ball.x_vel = last_x_vel
+        ball.y_vel = last_y_vel
+
+
 def handle_collision(ball, paddle, blocks):
 
     if ball.power_up == False:  # game ball check
@@ -162,6 +180,17 @@ def handle_collision(ball, paddle, blocks):
                     reduction_factor = (paddle.width / 2) / ball.max_vel
                     x_vel = difference_in_x / reduction_factor
                     ball.x_vel = x_vel * -1
+                    print(ball.sticky)
+                    if ball.sticky:
+                        print("ball should stick")
+                        # sticky ball power up active, ball don't bounce from paddle automatically
+                        last_x_vel = ball.x_vel
+                        last_y_vel = ball.y_vel
+                        print(last_x_vel)
+                        print(last_y_vel)
+                        ball.x_vel = 0
+                        ball.y_vel = 0
+                        return 4, ball, last_x_vel, last_y_vel, ball.x
 
 
         # collision with blocks
@@ -191,7 +220,7 @@ def handle_collision(ball, paddle, blocks):
 
 def power_up_generate():
     # how often powerup will fall
-    a = random.randint(0, 2)
+    a = random.randint(3, 3)
     return a
 
 
@@ -199,25 +228,7 @@ def enlarge_paddle(paddle):
     paddle.width = 200
     paddle.x -= 50
 
-def sticky_ball(ball, paddle):
-    last_x_vel = ball.x_vel
-    last_y_vel = ball.y_vel
-    ball.x_vel = 0
-    ball.y_vel = 0
-    
-    if ball.y_vel > 0:
-        if ball.x >= paddle.x and ball.x <= paddle.x + paddle.width:
-            if ball.y + ball.radius >= paddle.y:
-                ball.y_vel *= -1
 
-                # ball bounce angle change
-                middle_x = paddle.x + paddle.width / 2
-                difference_in_x = middle_x - ball.x
-                reduction_factor = (paddle.width / 2) / ball.max_vel
-                x_vel = difference_in_x / reduction_factor
-                ball.x_vel = x_vel * -1
-
-# ball sticks to paddle
 # shooting bullets from paddle
 
 
@@ -257,6 +268,11 @@ def main():
     paddles = [paddle_1]
     power_up = False
     enlarge_paddle_check = False
+    sticky_ball_check = False
+    ball_glued = False
+    shooting_check = False
+    sticky_ball_values = [0, 0, 0, 0]
+
 
     while run:
         clock.tick(FPS)
@@ -274,8 +290,9 @@ def main():
             ball.move()
             collision_check = handle_collision(ball, paddle_1, blocks)
 
+
             if collision_check:
-                if ball.power_up == False:  # normal ball, collision with ball and block:
+                if ball.power_up == False and collision_check[0] != 4:  # normal ball, collision with ball and block:
                     collision_check[1].hp -= 1
                     if collision_check[1].hp == 0:  # remove block if its hp falls to 0:
                         # check if power_up will spawn and what type:
@@ -290,9 +307,19 @@ def main():
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, BLUE, 3))
                         elif pu_number == 2:
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, YELLOW, 3))
-
+                        elif pu_number == 3:
+                            balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, RED, 3))
                         score += collision_check[1].reward
                         remove_block(blocks, collision_check[1])
+
+                elif collision_check[0] == 4 and not ball_glued:
+                    print("ball collision with paddle")
+                    # sticky ball power up is active
+                    # ball is stuck to paddle, waiting for SPACE key press to release
+                    ball_glued = True
+                    sticky_ball_values = [collision_check[1], collision_check[2], collision_check[3], collision_check[4]]
+                    ball_offset = ball.x - paddle_1.x
+
                 else:  # ball is a power up ball
                     if collision_check[0] == 1:  # power up caught, remove power up ball, modify game by power up
                         print(f"zlapane {collision_check[1].color}")
@@ -318,10 +345,16 @@ def main():
                                     balls[-1].x_vel -= 2
                                     balls[-1].y_vel *= -1.2
                         elif collision_check[1].color is YELLOW:
+                            # sticky ball power up
                             print("ball sticks to paddle")
                             sticky_ball_check = True
                             sticky_ball_start_time = time.time()
-                            
+                        elif collision_check[1].color is RED:
+                            # shoot bullets from paddle
+                            print("shooting paddle")
+                            shooting_check = True
+                            shooting_start_time = time.time()
+
                         print(f"len(balls) = {len(balls)}")
                     power_up = False
 
@@ -333,6 +366,10 @@ def main():
                     balls = [balls[0]]
                     paddle_1.reset()
                     score = 0
+                    enlarge_paddle_check = False
+                    sticky_ball_check = False
+                    ball_glued = False
+
                     loss_text = wl_font.render("You lose!", 1, WHITE)
                     WINDOW.blit(loss_text, ((WIDTH // 2) - (loss_text.get_width() // 2), HEIGHT // 2))
                     pygame.display.update()
@@ -348,13 +385,27 @@ def main():
                     enlarge_paddle_check = False
                     paddle_1.width = 100
                     paddle_1.x += 50
-                    
+                    print("enlarge paddle time up")
+
             if sticky_ball_check:
                 if time.time() - sticky_ball_start_time > 15:
                     sticky_ball_check = False
-                    
+                    ball.sticky = False
+                    print("sticky ball time up")
+                    if ball_glued:
+                        sticky_ball_release(keys, ball, sticky_ball_values[1], sticky_ball_values[2], time_up=True)
+                        ball_glued = False
+                else:
+                    ball.sticky = True
+                    if ball_glued and ball.sticky and not ball.power_up and ball.y_vel == 0:
+                        ball.x = paddle_1.x + ball_offset
+                        if sticky_ball_release(keys, ball, sticky_ball_values[1], sticky_ball_values[2]) == 1:
+                            ball_glued = False
 
-
+            if shooting_check:
+                if keys[pygame.K_SPACE]:
+                    print("space")
+                    #balls.append(Ball(paddle_1.x + 2, paddle_1.x + paddle_1.width - 2, 2, False, RED, 10, False, True))
 
         # all blocks are destroyed
         if blocks == []:
@@ -362,6 +413,9 @@ def main():
             balls[0].reset()
             paddle_1.reset()
             score += 100
+            enlarge_paddle_check = False
+            sticky_ball_check = False
+            ball_glued = False
 
             next_level_text = wl_font.render("Next level!", 1, WHITE)
             WINDOW.blit(next_level_text, ((WIDTH // 2) - (next_level_text.get_width() // 2), HEIGHT // 2))
