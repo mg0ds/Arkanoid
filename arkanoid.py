@@ -30,14 +30,14 @@ PADDLE_START_POZ_X = WIDTH // 2 - PADDLE_WIDTH // 2
 PADDLE_START_POZ_Y = HEIGHT - PADDLE_HEIGHT - int(HEIGHT * 0.04)
 BALL_RADIUS = 7
 
-# game levels, 16 signs per level
+# game levels, 16 blocks per level
 # R, G, B, Y, P are colors, _ is empty space
 # Y has 2hp, P has 3hp, other blocks have 1hp
-game1 = ["BRBRBRBRBRBRBRBR"]
-game2 = ["_B_P__RYYR__P_B_"]
+game1 = ["BRBRBRBRBRBRBRBR", "RBRBRBRBRBRBRBRB"]
+game2 = ["BRBRBRBRBRBRBRBR", "_B_P__RYYR__P_B_", "RR____________RR", "RBRBRBRBRBRBRBRB"]
 game3 = ["GGRR___BP___YYGG", "RR____________RR", "BRGYPBRGYPBRGYPB"]
-game4 = ["_G_____RR_____B_", "YPYPYPYPYPYPYPYP"]
-game5 = ["BRGYPBRGYPBRGYPB", "RRRBBBGGGGYYYPPP"]
+game4 = ["_G_____RR_____B_", "YPYPYPYPYPYPYPYP", "RBRBRBRBRBRBRBRB"]
+game5 = ["BRGYPBRGYPBRGYPB", "RRRBBBGGGGYYYPPP", "RBRBRBRBRBRBRBRB", "YYYYYYYYYYYYYYYY"]
 game6 = ["PPPPPPPPPPPPPPPP", "RRRRRRRRRRRRRRRR", "GGGGGGGGGGGGGGGG", "BBBBBBBBBBBBBBBB", "YYYYYYYYYYYYYYYY"]
 games = [game1, game2, game3, game4, game5, game6]
 
@@ -69,6 +69,10 @@ class Paddle:
 
 
 class Ball:
+    last_x_vel = 0
+    last_y_vel = -5
+    ball_offset = 0
+
     def __init__(self, x, y, radius, power_up=False, color=WHITE, max_vel=5, sticky=False, bullet=False):
         self.x = x
         self.y = y
@@ -97,18 +101,26 @@ class Ball:
         self.y_vel = self.start_max_vel
         self.sticky = False
 
+    def glued_ball(self):
+        if self.x_vel != 0 and self.y_vel != 0:
+            self.last_x_vel = self.x_vel
+            self.last_y_vel = self.y_vel
+        else:
+            self.last_x_vel = 0
+            self.last_y_vel = -5
+        self.x_vel = 0
+        self.y_vel = 0
 
 class Block:
     B_WIDTH = 50
     B_HEIGHT = 20
 
-    def __init__(self, x, y, color, reward=10, hp=1, active=True):
+    def __init__(self, x, y, color, reward=10, hp=1):
         self.x = x
         self.y = y
         self.color = color
         self.reward = reward
         self.hp = hp
-        self.active = active
         if self.color == YELLOW:
             self.hp = 2
             self.reward = 25
@@ -144,14 +156,15 @@ def handle_paddle_movement(keys, paddle_1):
         paddle_1.move(left=False)
 
 
-def sticky_ball_release(keys, ball, last_x_vel, last_y_vel, time_up=False):
-    if keys[pygame.K_SPACE]:
-        ball.x_vel = last_x_vel
-        ball.y_vel = last_y_vel
-        return 1
-    elif time_up:
-        ball.x_vel = last_x_vel
-        ball.y_vel = last_y_vel
+def sticky_ball_release(keys, ball, time_up=False):
+    if not ball.power_up and ball.y_vel == 0:
+        if keys[pygame.K_SPACE]:
+            ball.x_vel = ball.last_x_vel
+            ball.y_vel = ball.last_y_vel
+            return 1
+        elif time_up:
+            ball.x_vel = ball.last_x_vel
+            ball.y_vel = ball.last_y_vel
 
 
 def handle_collision(ball, paddle, blocks):
@@ -178,11 +191,9 @@ def handle_collision(ball, paddle, blocks):
                     ball.x_vel = x_vel * -1
                     if ball.sticky:
                         # sticky ball power up active, ball don't bounce from paddle automatically
-                        last_x_vel = ball.x_vel
-                        last_y_vel = ball.y_vel
-                        ball.x_vel = 0
-                        ball.y_vel = 0
-                        return 4, ball, last_x_vel, last_y_vel, ball.x
+                        # save bounce direction and stop ball in place
+                        ball.glued_ball()
+                        return 4, ball
 
         # collision with blocks
         for block in blocks:
@@ -264,7 +275,6 @@ def main():
     ball_glued = False
     shooting_check = False
     bullets_check = False
-    sticky_ball_values = [0, 0, 0, 0]
 
     while run:
         clock.tick(FPS)
@@ -295,13 +305,13 @@ def main():
                         if pu_number == 0:
                             # enlarge pad
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, PINK, 3))
-                        elif pu_number == 1:
+                        elif pu_number == 3:
                             # three balls
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, BLUE, 3))
-                        elif pu_number == 2:
+                        elif pu_number == 7:
                             # sticky ball
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, YELLOW, 3))
-                        elif pu_number == 3:
+                        elif pu_number == 10:
                             # shoot from paddle
                             balls.append(Ball(collision_check[1].x + 25, collision_check[1].y + 10, 3, True, RED, 3))
                         score += collision_check[1].reward
@@ -313,10 +323,7 @@ def main():
                     # sticky ball power up is active
                     # ball is stuck to paddle, waiting for SPACE key press to release
                     ball_glued = True
-                    sticky_ball_values = [collision_check[1], collision_check[2], collision_check[3],
-                                          collision_check[4]]
-                    ball_offset = ball.x - paddle_1.x
-
+                    ball.ball_offset = ball.x - paddle_1.x
                 else:  # ball is a power up ball
                     if collision_check[0] == 1:  # power up caught, remove power up ball, modify game by power up
                         try:
@@ -326,12 +333,12 @@ def main():
 
                         if enlarge_paddle_check is False and collision_check[1].color is PINK:
                             # enlarge paddle power up activate
-                            print("enlarge paddle")
+                            print("enlarge paddle\n")
                             enlarge_paddle(paddle_1)
                             enlarge_paddle_check = True
                             enp_start_time = time.time()
                         elif collision_check[1].color is BLUE:
-                            print("3 balls")
+                            print("3 balls\n")
                             # three balls power up
                             for ball in balls[::-1]:
                                 if ball.power_up is False:
@@ -344,13 +351,13 @@ def main():
                         elif collision_check[1].color is YELLOW:
                             # sticky ball power up
                             print("ball sticks to paddle")
-                            print("press SPACE to release")
+                            print("press SPACE to release\n")
                             sticky_ball_check = True
                             sticky_ball_start_time = time.time()
                         elif collision_check[1].color is RED:
                             # shoot bullets from paddle
                             print("shooting paddle")
-                            print("press SPACE to shoot")
+                            print("press SPACE to shoot\n")
                             shooting_check = True
                             shooting_start_time = time.time()
 
@@ -360,25 +367,30 @@ def main():
                     enlarge_paddle_check = False
                     paddle_1.width = 100
                     paddle_1.x += 50
-                    print("enlarge paddle time up")
+                    print("enlarge paddle time up\n")
+
             if sticky_ball_check:
+                all_glued_balls = [glued_ball for glued_ball in balls if ball.sticky and not ball.power_up]
                 if time.time() - sticky_ball_start_time > 15:
                     sticky_ball_check = False
-                    ball.sticky = False
-                    print("sticky ball time up")
-                    if ball_glued:
-                        sticky_ball_release(keys, ball, sticky_ball_values[1], sticky_ball_values[2], time_up=True)
+                    print("sticky ball time up\n")
+                    for glued_ball in all_glued_balls:
+                        sticky_ball_release(keys, glued_ball, time_up=True)
                         ball_glued = False
+                    for ball in balls:
+                        ball.sticky = False
                 else:
                     ball.sticky = True
                     if ball_glued and ball.sticky and not ball.power_up and ball.y_vel == 0:
-                        ball.x = paddle_1.x + ball_offset
-                        if sticky_ball_release(keys, ball, sticky_ball_values[1], sticky_ball_values[2]) == 1:
-                            ball_glued = False
+                        ball.x = paddle_1.x + ball.ball_offset
+                        for glued_ball in all_glued_balls:
+                            if sticky_ball_release(keys, glued_ball) == 1:
+                                ball_glued = False
+
             if bullets_check:
                 if time.time() - shooting_start_time > 3:
                     shooting_check = False
-                    print("shooting time up")
+                    print("shooting time up\n")
                     bullets_check = False
                 else:
                     balls.append(Ball(paddle_1.x + 2, paddle_1.y, 2, False, RED, 10, False, True))
