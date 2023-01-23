@@ -436,12 +436,12 @@ def main():
             enlarge_paddle_check = False
             sticky_ball_check = False
             ball_glued = False
-
-            next_level_text = wl_font.render("Next level!", True, WHITE)
-            WINDOW.blit(next_level_text, ((WIDTH // 2) - (next_level_text.get_width() // 2), HEIGHT // 2))
-            pygame.display.update()
-            game += 1
-            if game == len(games):
+            if game < len(games):
+                next_level_text = wl_font.render("Next level!", True, WHITE)
+                WINDOW.blit(next_level_text, ((WIDTH // 2) - (next_level_text.get_width() // 2), HEIGHT // 2))
+                pygame.display.update()
+                game += 1
+            elif game == len(games):
                 # all levels finished
                 win_text = wl_font.render("You WON!", True, WHITE)
                 WINDOW.blit(win_text, ((WIDTH // 2) - (win_text.get_width() // 2), HEIGHT // 2))
